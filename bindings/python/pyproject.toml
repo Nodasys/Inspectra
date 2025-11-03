@@ -1,0 +1,34 @@
+[build-system]
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
+
+[project]
+name = "inspectra"
+version = "0.1.0"
+description = "Memory analysis and manipulation framework"
+authors = [
+    { name = "Nodasys", email = "kevin.gregoire@nodasys.com" }
+]
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Rust",
+]
+
+[project.urls]
+Homepage = "https://github.com/nodasys/inspectra"
+Repository = "https://github.com/nodasys/inspectra"
+
+[tool.maturin]
+python-source = "python"
+module-name = "inspectra.inspectra"

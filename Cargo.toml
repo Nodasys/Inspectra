@@ -1,0 +1,43 @@
+[workspace]
+members = [
+    "core",
+    "bindings/python",
+    "inspectra-gui/src-tauri",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Nodasys <kevin.gregoire@nodasys.com>"]
+license = "MIT"
+repository = "https://github.com/nodasys/inspectra"
+
+[workspace.dependencies]
+# Core dependencies
+tokio = { version = "1.36", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "1.0"
+anyhow = "1.0"
+log = "0.4"
+env_logger = "0.11"
+
+# Memory and process manipulation
+windows = { version = "0.54", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_Memory",
+    "Win32_Security",
+] }
+
+# Cross-platform support
+libc = "0.2"
+
+# Scripting integration
+pyo3 = { version = "0.20", features = ["extension-module"] }
+
+# UI/IPC
+tauri = { version = "1.5", features = ["api-all"] }

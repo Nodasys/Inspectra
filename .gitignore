@@ -1,8 +1,42 @@
-.vscode/
-build/
+# Build artifacts
+/target/
+/build/
+**/*.rs.bk
+*.pdb
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
 dist/
+.venv/
+venv/
+.maturin/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+
+# OS
+Thumbs.db
+.DS_Store
 *.o
 *.obj
+
+# Session files
+*.insp
+
+# Test outputs
+*.test
 *.exe
 *.dll
 *.pdb

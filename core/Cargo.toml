@@ -1,0 +1,32 @@
+[package]
+name = "inspectra-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Inspectra core memory analysis and manipulation engine"
+
+[dependencies]
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+log = { workspace = true }
+env_logger = { workspace = true }
+
+# Platform-specific
+[target.'cfg(windows)'.dependencies]
+windows = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+libc = { workspace = true }
+nix = { version = "0.27", features = ["process", "signal"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[lib]
+name = "inspectra_core"
+path = "src/lib.rs"
