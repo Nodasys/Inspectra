@@ -82,12 +82,14 @@ fn scan_memory(
     let mem = memory::create_memory(handle.as_ref()).map_err(|e| e.to_string())?;
 
     let dt = match data_type.as_str() {
+        "i8" => types::DataType::I8,
+        "i16" => types::DataType::I16,
         "i32" => types::DataType::I32,
         "i64" => types::DataType::I64,
         "f32" => types::DataType::F32,
         "f64" => types::DataType::F64,
         "string" => types::DataType::String,
-        _ => return Err("Unknown data type".to_string()),
+        _ => return Err(format!("Unknown data type: {}", data_type)),
     };
 
     let mut config = scanner::ScanConfig::default();
@@ -168,7 +170,7 @@ fn main() {
             scan_memory,
             read_memory,
             write_memory,
-            get_version,
+            get_version
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

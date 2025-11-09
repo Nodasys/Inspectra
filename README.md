@@ -4,6 +4,10 @@ Modern memory analysis, inspection and manipulation framework.
 
 **Inspectra** is a professional toolset designed for low-level process introspection, memory scanning, pointer analysis, live patching and automation. It targets researchers, reverse engineers, QA engineers and developers who require a robust, extensible and production-quality memory analysis platform.
 
+<p align="center">
+  <img src="https://raw.githubusercontent.com/Nodasys/Inspectra/main/.github/assets/screenshot.png" alt="Inspectra Screenshot" width="700"/>
+</p>
+
 ## 🚀 Features
 
 - **Process Management**: List, attach, and inspect running processes
