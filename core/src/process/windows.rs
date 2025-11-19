@@ -10,8 +10,9 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
     TH32CS_SNAPPROCESS,
 };
 use windows::Win32::System::Threading::{
-    OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION,
-    PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE,
+    OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
+    PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE, QueryFullProcessImageNameW,
+    PROCESS_NAME_WIN32,
 };
 
 pub struct WindowsProcessManager;
@@ -44,10 +45,15 @@ impl ProcessManager for WindowsProcessManager {
                             .unwrap_or(entry.szExeFile.len())],
                     );
 
+                    let pid = entry.th32ProcessID;
+                    
+                    // Try to get the full path of the process
+                    let path = get_process_path(pid).unwrap_or_default();
+
                     processes.push(ProcessInfo {
-                        pid: entry.th32ProcessID,
+                        pid,
                         name: name.clone(),
-                        path: String::new(), // Would need additional API call
+                        path,
                         architecture: Architecture::Unknown,
                         memory_usage: 0,
                         is_elevated: false,
@@ -92,7 +98,33 @@ impl ProcessManager for WindowsProcessManager {
     }
 }
 
-struct SafeHandle(HANDLE);
+/// Get the full path of a process by PID
+fn get_process_path(pid: Pid) -> Result<String> {
+    unsafe {
+        use windows::core::PWSTR;
+        
+        // Try with limited information first (works for more processes)
+        let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
+            .or_else(|_| OpenProcess(PROCESS_QUERY_INFORMATION, false, pid))
+            .map_err(|e| InspectraError::process(format!("Failed to open process {}: {}", pid, e)))?;
+
+        let mut buffer = vec![0u16; 1024];
+        let mut size = buffer.len() as u32;
+        
+        let pwstr = PWSTR::from_raw(buffer.as_mut_ptr());
+        if QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, pwstr, &mut size).is_ok() {
+            let len = buffer.iter().position(|&c| c == 0).unwrap_or(size as usize);
+            let path = String::from_utf16_lossy(&buffer[..len]);
+            let _ = CloseHandle(handle);
+            return Ok(path);
+        }
+        
+        let _ = CloseHandle(handle);
+        Ok(String::new())
+    }
+}
+
+pub struct SafeHandle(pub HANDLE);
 
 impl Drop for SafeHandle {
     fn drop(&mut self) {
@@ -137,5 +169,9 @@ impl ProcessHandle for WindowsProcessHandle {
                 .map_err(|e| InspectraError::process(format!("Failed to terminate: {}", e)))?;
             Ok(())
         }
+    }
+    
+    fn as_raw_handle(&self) -> Option<*mut std::ffi::c_void> {
+        Some(self.handle.0.0 as *mut _)
     }
 }

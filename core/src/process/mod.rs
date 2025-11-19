@@ -38,6 +38,15 @@ pub trait ProcessHandle: Send + Sync {
 
     /// Terminate the process (requires elevated privileges)
     fn terminate(&self) -> Result<()>;
+    
+    /// Get the raw handle (platform-specific)
+    #[cfg(windows)]
+    fn as_raw_handle(&self) -> Option<*mut std::ffi::c_void>;
+    
+    #[cfg(not(windows))]
+    fn as_raw_handle(&self) -> Option<*mut std::ffi::c_void> {
+        None
+    }
 }
 
 /// Process manager for listing and attaching to processes

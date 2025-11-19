@@ -111,6 +111,8 @@ pub enum ScanType {
     Changed,
     Unchanged,
     Unknown,
+    Bigger,
+    Smaller,
 }
 
 /// Scan result

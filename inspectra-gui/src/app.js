@@ -143,6 +143,8 @@ function filterModalProcesses() {
 		filtered = filtered.filter(p => !isSystemProcess(p));
 	} else if (currentTab === 'system') {
 		filtered = filtered.filter(p => isSystemProcess(p));
+	} else if (currentTab === 'all') {
+		// Show all processes
 	}
 	
 	return filtered;
@@ -163,12 +165,18 @@ function renderModalProcessList() {
 	el.innerHTML = filtered.map(p => {
 		const pidStr = String(p.pid).padStart(8, '0');
 		const displayName = `${pidStr}-${p.name}`;
+		// Show icon if available, otherwise show placeholder
+		let iconHtml = '<div class="process-list-icon-placeholder"></div>';
+		if (p.icon && p.icon.startsWith('data:image')) {
+			iconHtml = `<img src="${p.icon}" class="process-list-icon" alt="" onerror="this.style.display='none';" />`;
+		}
 		
 		return `
 			<div class="process-list-item ${modalSelectedPid === p.pid ? 'selected' : ''}" 
 			     data-pid="${p.pid}" 
 			     onclick="selectModalProcess(${p.pid})"
 			     ondblclick="attachSelectedProcess()">
+				${iconHtml}
 				<div class="process-list-info">
 					<div class="process-list-name">${displayName}</div>
 				</div>
@@ -202,7 +210,12 @@ async function attachSelectedProcess() {
 		
 		// Update process display
 		const display = document.getElementById('processDisplay');
-		display.querySelector('.process-icon').textContent = isSystemProcess(process) ? '⚙️' : '📱';
+		const iconEl = display.querySelector('.process-icon');
+		if (process.icon && process.icon.startsWith('data:')) {
+			iconEl.innerHTML = `<img src="${process.icon}" style="width: 24px; height: 24px;" alt="" onerror="this.textContent='${isSystemProcess(process) ? '⚙️' : '📱'}'" />`;
+		} else {
+			iconEl.textContent = isSystemProcess(process) ? '⚙️' : '📱';
+		}
 		display.querySelector('.process-name').textContent = process.name;
 		display.querySelector('.process-pid').textContent = `PID: ${process.pid}`;
 		
@@ -236,17 +249,21 @@ async function performFirstScan() {
 	const valueType = document.getElementById('valueType').value;
 	const spec = getTypeSpec(valueType);
 	const value = document.getElementById('scanValue').value;
+	const writableOnly = document.getElementById('optWritable').checked;
+	const fastScan = document.getElementById('optFastScan').checked;
 	
-	if (type === 'exact' && !value) {
+	if ((type === 'exact' || type === 'bigger' || type === 'smaller') && !value) {
 		alert('Please enter a value to search');
 		return;
 	}
 	
+	let rangeMin = null;
+	let rangeMax = null;
 	if (type === 'between') {
-		const min = document.getElementById('rangeMin').value;
-		const max = document.getElementById('rangeMax').value;
-		if (!min || !max) {
-			alert('Please enter min and max values');
+		rangeMin = parseFloat(document.getElementById('rangeMin').value);
+		rangeMax = parseFloat(document.getElementById('rangeMax').value);
+		if (isNaN(rangeMin) || isNaN(rangeMax)) {
+			alert('Please enter valid min and max values');
 			return;
 		}
 	}
@@ -255,14 +272,14 @@ async function performFirstScan() {
 		setStatus('Scanning memory...');
 		const invoke = await getInvoke();
 		
-		// For now, only exact value is supported by backend
-		if (type !== 'exact') {
-			setStatus('Only Exact Value scan is fully supported. Using exact value scan.');
-		}
-		
 		const results = await invoke('scan_memory', {
-			value: String(value || '0'),
-			data_type: spec.dt
+			scanType: type,
+			value: (type === 'unknown' || type === 'changed' || type === 'unchanged') ? null : (value || null),
+			dataType: spec.dt,
+			rangeMin: rangeMin,
+			rangeMax: rangeMax,
+			writableOnly: writableOnly,
+			aligned: fastScan
 		});
 		
 		previousScanResults = scanResults = filteredResults = results;
@@ -275,6 +292,7 @@ async function performFirstScan() {
 		setStatus(`Found ${results.length} addresses`);
 	} catch (e) {
 		setStatus('Scan error: ' + (e?.message || e));
+		console.error('Scan error:', e);
 	}
 }
 
@@ -284,59 +302,45 @@ async function performNextScan() {
 		return;
 	}
 	
+	if (!selectedPid) {
+		alert('No process attached');
+		return;
+	}
+	
 	const type = document.getElementById('scanType').value;
 	const valueType = document.getElementById('valueType').value;
 	const spec = getTypeSpec(valueType);
 	const value = document.getElementById('scanValue').value;
 	
+	let rangeMin = null;
+	let rangeMax = null;
+	if (type === 'between') {
+		rangeMin = parseFloat(document.getElementById('rangeMin').value);
+		rangeMax = parseFloat(document.getElementById('rangeMax').value);
+		if (isNaN(rangeMin) || isNaN(rangeMax)) {
+			alert('Please enter valid min and max values');
+			return;
+		}
+	}
+	
 	try {
 		setStatus('Re-scanning memory...');
 		const invoke = await getInvoke();
-		const next = [];
 		
-		for (const r of previousScanResults) {
-			try {
-				const bytes = await invoke('read_memory', {
-					pid: selectedPid,
-					address: r.address,
-					size: spec.size
-				});
-				
-				const current = fromBytes(bytes, spec);
-				let match = false;
-				
-				if (type === 'exact') {
-					match = String(current) === String(value);
-				} else if (type === 'bigger') {
-					match = parseFloat(current) > parseFloat(value);
-				} else if (type === 'smaller') {
-					match = parseFloat(current) < parseFloat(value);
-				} else if (type === 'between') {
-					const min = parseFloat(document.getElementById('rangeMin').value);
-					const max = parseFloat(document.getElementById('rangeMax').value);
-					const v = parseFloat(current);
-					match = v >= min && v <= max;
-				} else if (type === 'changed') {
-					match = String(current) !== String(r.value);
-				} else if (type === 'unchanged') {
-					match = String(current) === String(r.value);
-				} else if (type === 'increased') {
-					match = parseFloat(current) > parseFloat(r.value);
-				} else if (type === 'decreased') {
-					match = parseFloat(current) < parseFloat(r.value);
-				}
-				
-				if (match) {
-					next.push({ address: r.address, value: current });
-				}
-			} catch {}
-		}
+		const results = await invoke('rescan_memory', {
+			scanType: type,
+			value: (type === 'unknown' || type === 'changed' || type === 'unchanged') ? null : (value || null),
+			dataType: spec.dt,
+			rangeMin: rangeMin,
+			rangeMax: rangeMax
+		});
 		
-		previousScanResults = scanResults = filteredResults = next;
-		renderResults(next);
-		setStatus(`Found ${next.length} addresses`);
+		previousScanResults = scanResults = filteredResults = results;
+		renderResults(results);
+		setStatus(`Found ${results.length} addresses`);
 	} catch (e) {
 		setStatus('Scan error: ' + (e?.message || e));
+		console.error('Rescan error:', e);
 	}
 }
 
@@ -353,7 +357,7 @@ function resetScan() {
 	document.getElementById('btnNewScan').disabled = true;
 	document.getElementById('filterInput').value = '';
 	
-	setStatus('Scan reset');
+	setStatus('Scan reset. Ready for new scan.');
 }
 
 function renderResults(list) {
@@ -413,7 +417,6 @@ async function updateValue(address, newValue, index) {
 		const invoke = await getInvoke();
 		
 		await invoke('write_memory', {
-			pid: selectedPid,
 			address: address,
 			data: data
 		});
@@ -487,16 +490,16 @@ async function updateAddressValue(id, newValue) {
 		const invoke = await getInvoke();
 		
 		await invoke('write_memory', {
-			pid: selectedPid,
 			address: addr.address,
 			data: data
 		});
 		
 		addr.value = newValue;
 		renderAddressList();
-		setStatus('Value updated');
+		setStatus(`Updated ${addr.address} to ${newValue}`);
 	} catch (e) {
 		alert('Failed: ' + (e?.message || e));
+		setStatus('Update error: ' + (e?.message || e));
 	}
 }
 
@@ -521,7 +524,6 @@ function startFreezeLoop() {
 					const spec = getTypeSpec(addr.type);
 					const data = toBytes(addr.value, spec);
 					await invoke('write_memory', {
-						pid: selectedPid,
 						address: addr.address,
 						data: data
 					});

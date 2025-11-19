@@ -3,7 +3,7 @@
 use super::Memory;
 use crate::error::{InspectraError, Result};
 use crate::process::ProcessHandle;
-use crate::types::{Address, MemoryRegion, Protection, RegionType, Size};
+use crate::types::{Address, MemoryRegion, Protection, RegionType, Size, Pid};
 use windows::Win32::System::Diagnostics::Debug::{ReadProcessMemory, WriteProcessMemory};
 use windows::Win32::System::Memory::{
     VirtualAllocEx, VirtualFreeEx, VirtualProtectEx, VirtualQueryEx, MEMORY_BASIC_INFORMATION,
@@ -12,19 +12,46 @@ use windows::Win32::System::Memory::{
     PAGE_READWRITE, PAGE_PROTECTION_FLAGS,
 };
 use windows::Win32::Foundation::HANDLE;
+use std::sync::Mutex;
 
 pub struct WindowsMemory {
-    handle: HANDLE,
+    pid: Pid,
+    handle: Mutex<HANDLE>,
 }
 
 impl WindowsMemory {
-    pub fn new(_process: &dyn ProcessHandle) -> Result<Self> {
-        // We need to get the Windows handle from the process
-        // For now, we'll need to use an unsafe approach
-        // In production, we'd want a better abstraction
+    pub fn new(process: &dyn ProcessHandle) -> Result<Self> {
+        // Get the raw handle from the process
+        let raw_handle = process.as_raw_handle()
+            .ok_or_else(|| InspectraError::memory("Failed to get process handle"))?;
+        
+        let pid = process.pid();
+        
+        // Use the handle directly - we'll recreate it if needed
         Ok(Self {
-            handle: HANDLE::default(), // This needs proper implementation
+            pid,
+            handle: Mutex::new(unsafe { HANDLE(raw_handle as isize) }),
         })
+    }
+    
+    fn ensure_handle(&self) -> Result<HANDLE> {
+        // Check if handle is still valid, if not recreate it
+        let mut handle = self.handle.lock().unwrap();
+        unsafe {
+            use windows::Win32::System::Threading::OpenProcess;
+            use windows::Win32::System::Threading::{PROCESS_VM_READ, PROCESS_VM_WRITE, PROCESS_VM_OPERATION, PROCESS_QUERY_INFORMATION};
+            
+            // Try to open process again if handle is invalid
+            if handle.is_invalid() {
+                let new_handle = OpenProcess(
+                    PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_QUERY_INFORMATION,
+                    false,
+                    self.pid,
+                ).map_err(|e| InspectraError::memory(format!("Failed to reopen process: {}", e)))?;
+                *handle = new_handle;
+            }
+        }
+        Ok(*handle)
     }
 
     fn convert_protection(prot: Protection) -> PAGE_PROTECTION_FLAGS {
@@ -57,12 +84,14 @@ impl WindowsMemory {
 
 impl Memory for WindowsMemory {
     fn read(&self, address: Address, size: Size) -> Result<Vec<u8>> {
+        let handle = self.ensure_handle()?;
+        
         unsafe {
             let mut buffer = vec![0u8; size];
             let mut bytes_read = 0;
 
             ReadProcessMemory(
-                self.handle,
+                handle,
                 address as *const _,
                 buffer.as_mut_ptr() as *mut _,
                 size,
@@ -76,11 +105,13 @@ impl Memory for WindowsMemory {
     }
 
     fn write(&self, address: Address, data: &[u8]) -> Result<usize> {
+        let handle = self.ensure_handle()?;
+        
         unsafe {
             let mut bytes_written = 0;
 
             WriteProcessMemory(
-                self.handle,
+                handle,
                 address as *const _,
                 data.as_ptr() as *const _,
                 data.len(),
@@ -93,6 +124,8 @@ impl Memory for WindowsMemory {
     }
 
     fn query_regions(&self) -> Result<Vec<MemoryRegion>> {
+        let handle = self.ensure_handle()?;
+        
         let mut regions = Vec::new();
         let mut address: usize = 0;
 
@@ -100,7 +133,7 @@ impl Memory for WindowsMemory {
             loop {
                 let mut mbi = MEMORY_BASIC_INFORMATION::default();
                 let result = VirtualQueryEx(
-                    self.handle,
+                    handle,
                     Some(address as *const _),
                     &mut mbi,
                     std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
@@ -141,10 +174,12 @@ impl Memory for WindowsMemory {
     }
 
     fn query_region(&self, address: Address) -> Result<MemoryRegion> {
+        let handle = self.ensure_handle()?;
+        
         unsafe {
             let mut mbi = MEMORY_BASIC_INFORMATION::default();
             let result = VirtualQueryEx(
-                self.handle,
+                handle,
                 Some(address as *const _),
                 &mut mbi,
                 std::mem::size_of::<MEMORY_BASIC_INFORMATION>(),
@@ -175,12 +210,14 @@ impl Memory for WindowsMemory {
     }
 
     fn protect(&self, address: Address, size: Size, protection: Protection) -> Result<Protection> {
+        let handle = self.ensure_handle()?;
+        
         unsafe {
             let new_protect = Self::convert_protection(protection);
             let mut old_protect = PAGE_PROTECTION_FLAGS::default();
 
             VirtualProtectEx(
-                self.handle,
+                handle,
                 address as *const _,
                 size,
                 new_protect,
@@ -193,10 +230,12 @@ impl Memory for WindowsMemory {
     }
 
     fn allocate(&self, size: Size, protection: Protection) -> Result<Address> {
+        let handle = self.ensure_handle()?;
+        
         unsafe {
             let protect = Self::convert_protection(protection);
             let address = VirtualAllocEx(
-                self.handle,
+                handle,
                 None,
                 size,
                 MEM_COMMIT | MEM_RESERVE,
@@ -212,8 +251,10 @@ impl Memory for WindowsMemory {
     }
 
     fn free(&self, address: Address) -> Result<()> {
+        let handle = self.ensure_handle()?;
+        
         unsafe {
-            VirtualFreeEx(self.handle, address as *mut _, 0, MEM_RELEASE)
+            VirtualFreeEx(handle, address as *mut _, 0, MEM_RELEASE)
                 .map_err(|e| InspectraError::memory(format!("Free failed: {}", e)))?;
             Ok(())
         }
