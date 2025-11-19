@@ -20,6 +20,7 @@ body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background:
 .btn-select-process:hover { background: #1177bb; }
 
 .content { display: grid; grid-template-columns: 350px 1fr; grid-template-rows: 1fr 280px; height: calc(100vh - 90px); gap: 1px; background: #1a1a1a; }
+.content.with-hex { grid-template-rows: 1fr 280px 300px; }
 
 .panel { background: #252526; display: flex; flex-direction: column; overflow: hidden; }
 .panel-header { background: #2d2d30; padding: 10px 12px; border-bottom: 1px solid #3e3e42; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; }
@@ -94,6 +95,41 @@ code { font-family: 'Consolas', 'Courier New', monospace; color: #4ec9b0; font-s
 ::-webkit-scrollbar-thumb:hover { background: #4e4e52; }
 
 .empty-state { text-align: center; padding: 40px 20px; color: #858585; font-size: 13px; }
+
+.progress-overlay { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.8); z-index: 3000; align-items: center; justify-content: center; flex-direction: column; }
+.progress-overlay.active { display: flex; }
+.progress-box { background: #252526; border: 1px solid #3e3e42; border-radius: 6px; padding: 24px 32px; min-width: 400px; }
+.progress-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
+.progress-bar-container { background: #1e1e1e; border: 1px solid #3e3e42; border-radius: 4px; height: 24px; overflow: hidden; position: relative; }
+.progress-bar { background: linear-gradient(90deg, #0e639c, #1177bb); height: 100%; width: 0%; transition: width 0.3s; }
+.progress-text { margin-top: 12px; font-size: 12px; color: #858585; text-align: center; }
+
+.sortable { cursor: pointer; user-select: none; position: relative; }
+.sortable:hover { background: #3e3e42; }
+.sortable::after { content: ' ↕'; opacity: 0.3; font-size: 10px; }
+.sortable.asc::after { content: ' ↑'; opacity: 1; }
+.sortable.desc::after { content: ' ↓'; opacity: 1; }
+
+.pagination { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; background: #2d2d30; border-top: 1px solid #3e3e42; flex-shrink: 0; }
+.pagination button { padding: 6px 12px; background: #3e3e42; border: none; color: #d4d4d4; border-radius: 3px; cursor: pointer; font-size: 12px; font-weight: 600; }
+.pagination button:hover:not(:disabled) { background: #4e4e52; }
+.pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
+.pagination-info { font-size: 12px; color: #d4d4d4; font-weight: 500; min-width: 200px; text-align: center; }
+
+.hex-editor { grid-column: 1 / 3; grid-row: 3; }
+.hex-toolbar { padding: 12px; background: #2d2d30; border-bottom: 1px solid #3e3e42; display: flex; align-items: center; }
+.hex-view-container { overflow: auto; max-height: 280px; font-family: 'Consolas', 'Courier New', monospace; font-size: 12px; }
+.hex-view { padding: 12px; }
+.hex-line { display: flex; padding: 2px 0; }
+.hex-line:hover { background: #2d2d30; }
+.hex-address { color: #4ec9b0; width: 120px; padding-right: 12px; text-align: right; user-select: none; }
+.hex-bytes { flex: 1; display: flex; gap: 4px; }
+.hex-byte { color: #d4d4d4; width: 28px; text-align: center; cursor: pointer; padding: 2px; border-radius: 2px; }
+.hex-byte:hover { background: #3e3e42; }
+.hex-byte.editing { background: #0e639c; color: white; }
+.hex-ascii { color: #858585; width: 200px; padding-left: 12px; font-family: 'Consolas', 'Courier New', monospace; }
+.hex-ascii-char { display: inline-block; width: 12px; text-align: center; }
+.hex-ascii-char.non-printable { color: #4e4e52; }
 </style>
 </head>
 <body>
@@ -117,17 +153,58 @@ code { font-family: 'Consolas', 'Courier New', monospace; color: #4ec9b0; font-s
 <div class="control-group"><button class="btn btn-primary" id="btnFirstScan">First Scan</button></div>
 <div class="control-group"><button class="btn btn-primary" id="btnNextScan" disabled>Next Scan</button></div>
 <div class="control-group"><button class="btn btn-secondary" id="btnNewScan" disabled>New Scan</button></div>
+<div class="control-group" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid #3e3e42;">
+<label class="control-label">Scan Session</label>
+<button class="btn btn-secondary" onclick="saveScanSession()" style="margin-bottom: 8px; width: 100%; padding: 8px; font-size: 12px;">Save Scan</button>
+<button class="btn btn-secondary" onclick="loadScanSession()" style="width: 100%; padding: 8px; font-size: 12px;">Load Scan</button>
+</div>
 <div class="control-group" style="margin-top: 24px;"><label class="control-label">Scan Options</label><div style="font-size: 11px; color: #858585; margin-top: 4px;"><label style="display: flex; align-items: center; margin-bottom: 6px; cursor: pointer;"><input type="checkbox" id="optWritable" style="margin-right: 8px;" /><span>Writable memory only</span></label><label style="display: flex; align-items: center; margin-bottom: 6px; cursor: pointer;"><input type="checkbox" id="optFastScan" style="margin-right: 8px;" /><span>Fast scan (aligned)</span></label></div></div>
 </div>
 </section>
 <section class="panel results-panel">
 <div class="panel-header">Found Addresses <span id="resultsCount" style="color: #858585; font-weight: normal;"></span></div>
 <div class="results-toolbar"><input type="text" id="filterInput" placeholder="Filter addresses or values..." /><button onclick="filterResults()">Filter</button><button onclick="clearFilter()">Clear</button></div>
-<div class="panel-content" style="padding: 0;"><table><thead><tr><th style="width: 50px">#</th><th style="width: 140px">Address</th><th>Value</th><th style="width: 100px">Action</th></tr></thead><tbody id="resultsBody"><tr><td colspan="4" class="empty-state">No scan results yet</td></tr></tbody></table></div>
+<div class="panel-content" style="padding: 0; display: flex; flex-direction: column; overflow: hidden;">
+	<div style="flex: 1; overflow: auto;">
+		<table style="width: 100%;">
+			<thead>
+				<tr>
+					<th style="width: 50px" class="sortable" data-sort="index">#</th>
+					<th style="width: 140px" class="sortable" data-sort="address">Address</th>
+					<th class="sortable" data-sort="value">Value</th>
+					<th style="width: 100px">Action</th>
+				</tr>
+			</thead>
+			<tbody id="resultsBody">
+				<tr><td colspan="4" class="empty-state">No scan results yet</td></tr>
+			</tbody>
+		</table>
+	</div>
+	<div class="pagination" id="pagination" style="display: none;">
+		<button onclick="changePage(-1)" id="btnPrev">◀ Prev</button>
+		<span class="pagination-info" id="pageInfo">Page 1 of 1</span>
+		<button onclick="changePage(1)" id="btnNext">Next ▶</button>
+	</div>
+</div>
 </section>
 <section class="panel address-list">
 <div class="panel-header">Address List</div>
 <div class="panel-content" style="padding: 0;"><table><thead><tr><th style="width: 40px">✓</th><th style="width: 70px">Freeze</th><th>Description</th><th style="width: 140px">Address</th><th style="width: 100px">Type</th><th style="width: 120px">Value</th><th style="width: 100px">Actions</th></tr></thead><tbody id="addressTableBody"><tr><td colspan="7" class="empty-state">No addresses added yet</td></tr></tbody></table></div>
+</section>
+<section class="panel hex-editor" id="hexEditorPanel" style="display: none;">
+<div class="panel-header">Hex Editor <button class="btn-close-hex" onclick="closeHexEditor()" style="float: right; background: #3e3e42; border: none; color: #d4d4d4; padding: 4px 12px; border-radius: 3px; cursor: pointer; font-size: 11px;">Close</button></div>
+<div class="panel-content" style="padding: 0;">
+<div class="hex-toolbar">
+<input type="text" id="hexAddressInput" placeholder="Address (0x...)" style="width: 200px; margin-right: 8px;" onkeypress="if(event.key==='Enter') loadHexView()" />
+<input type="number" id="hexSizeInput" value="256" min="16" max="4096" step="16" style="width: 100px; margin-right: 8px;" />
+<button onclick="loadHexView()" class="btn btn-primary" style="padding: 6px 14px; font-size: 12px;">Load</button>
+<button onclick="refreshHexView()" class="btn btn-secondary" style="padding: 6px 14px; font-size: 12px;">Refresh</button>
+<span style="margin-left: 12px; color: #858585; font-size: 11px;">Click on any byte to edit</span>
+</div>
+<div class="hex-view-container" id="hexViewContainer">
+<div class="empty-state">Enter an address and click Load to view memory</div>
+</div>
+</div>
 </section>
 </div>
 </div>
@@ -141,6 +218,15 @@ code { font-family: 'Consolas', 'Courier New', monospace; color: #4ec9b0; font-s
 </div>
 </div>
 <div class="status-bar"><span class="status-text" id="statusText">Ready</span><span class="status-version" id="versionText">v0.0.0</span></div>
+<div class="progress-overlay" id="progressOverlay">
+	<div class="progress-box">
+		<div class="progress-title" id="progressTitle">Scanning memory...</div>
+		<div class="progress-bar-container">
+			<div class="progress-bar" id="progressBar"></div>
+		</div>
+		<div class="progress-text" id="progressText">0%</div>
+	</div>
+</div>
 <script src="app.js"></script>
 </body>
 </html>

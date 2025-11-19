@@ -39,10 +39,17 @@ fn list_processes() -> Result<Vec<ProcessInfo>, String> {
         .list_processes()
         .map_err(|e| e.to_string())?;
 
+    // Extract icons with better error handling
     Ok(processes
         .into_iter()
         .map(|p| {
-            let icon = extract_process_icon(&p.path, p.pid);
+            // Try to extract icon, but don't fail if it doesn't work
+            let icon = if !p.path.is_empty() {
+                extract_process_icon_robust(&p.path, p.pid)
+            } else {
+                None
+            };
+            
             ProcessInfo {
                 pid: p.pid,
                 name: p.name,
@@ -56,79 +63,93 @@ fn list_processes() -> Result<Vec<ProcessInfo>, String> {
 }
 
 #[cfg(windows)]
-fn extract_process_icon(path: &str, _pid: u32) -> Option<String> {
+fn extract_process_icon_robust(path: &str, _pid: u32) -> Option<String> {
     use std::ffi::OsStr;
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
     use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
     use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_SMALLICON};
-    use windows::Win32::UI::WindowsAndMessaging::{HICON, DestroyIcon, GetIconInfo};
-    use windows::Win32::Graphics::Gdi::{BITMAP, GetObjectW, GetDC, CreateCompatibleDC, SelectObject, GetDIBits, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, CreateCompatibleBitmap, DeleteObject, DeleteDC, ReleaseDC};
-    use std::ptr;
+    use windows::Win32::UI::WindowsAndMessaging::{HICON, DestroyIcon};
+    
+    if path.is_empty() {
+        return None;
+    }
     
     unsafe {
-        let exe_path = if !path.is_empty() {
-            path.to_string()
-        } else {
-            return None;
-        };
-        
         // Convert path to wide string
-        let wide_path: Vec<u16> = OsStr::new(&exe_path).encode_wide().chain(Some(0)).collect();
+        let wide_path: Vec<u16> = OsStr::new(path).encode_wide().chain(Some(0)).collect();
+        if wide_path.len() < 2 {
+            return None;
+        }
         let path_ptr = PCWSTR::from_raw(wide_path.as_ptr());
         
         let mut file_info: SHFILEINFOW = std::mem::zeroed();
         
-        // Get icon handle
-        if SHGetFileInfoW(
+        // Get icon handle - use SHGFI_SMALLICON for 16x16 icons
+        let result = SHGetFileInfoW(
             path_ptr,
             FILE_FLAGS_AND_ATTRIBUTES(0),
             Some(&mut file_info),
             std::mem::size_of::<SHFILEINFOW>() as u32,
             SHGFI_ICON | SHGFI_SMALLICON,
-        ) != 0 {
-            let hicon: HICON = file_info.hIcon;
-            if !hicon.is_invalid() {
-                // Convert icon to PNG base64
-                if let Some(icon_data) = icon_to_png_base64(hicon) {
-                    let _ = DestroyIcon(hicon);
-                    return Some(format!("data:image/png;base64,{}", icon_data));
-                }
-                let _ = DestroyIcon(hicon);
-            }
+        );
+        
+        if result == 0 {
+            return None;
         }
         
-        None
+        let hicon: HICON = file_info.hIcon;
+        if hicon.is_invalid() {
+            return None;
+        }
+        
+        // Convert icon to PNG base64 using DrawIconEx method (more reliable)
+        let icon_result = icon_to_png_base64_draw(hicon);
+        let _ = DestroyIcon(hicon);
+        
+        icon_result.map(|data| format!("data:image/png;base64,{}", data))
+    }
+}
+
+// Keep old function for fallback
+#[cfg(windows)]
+fn extract_process_icon(path: &str, pid: u32) -> Option<String> {
+    extract_process_icon_robust(path, pid)
+}
+
+// Test function to verify icon extraction
+#[cfg(windows)]
+#[allow(dead_code)]
+fn test_icon_extraction() {
+    let test_paths = vec![
+        "C:\\Windows\\System32\\notepad.exe",
+        "C:\\Windows\\System32\\calc.exe",
+    ];
+    
+    for path in test_paths {
+        if let Some(icon) = extract_process_icon_robust(path, 0) {
+            println!("Successfully extracted icon from: {}", path);
+            println!("Icon data length: {} bytes", icon.len());
+        } else {
+            println!("Failed to extract icon from: {}", path);
+        }
     }
 }
 
 #[cfg(windows)]
-unsafe fn icon_to_png_base64(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option<String> {
-    use windows::Win32::Graphics::Gdi::{BITMAP, GetObjectW, GetDC, CreateCompatibleDC, SelectObject, GetDIBits, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, CreateCompatibleBitmap, DeleteObject, DeleteDC, ReleaseDC};
-    use windows::Win32::UI::WindowsAndMessaging::GetIconInfo;
+unsafe fn icon_to_png_base64_draw(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option<String> {
+    use windows::Win32::Graphics::Gdi::{
+        GetDC, CreateCompatibleDC, CreateCompatibleBitmap, SelectObject, 
+        GetDIBits, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS,
+        DeleteObject, DeleteDC, ReleaseDC
+    };
+    use windows::Win32::UI::WindowsAndMessaging::{DrawIconEx, DI_NORMAL};
     use image::RgbaImage;
     
-    let mut icon_info = std::mem::zeroed();
-    if GetIconInfo(hicon, &mut icon_info).is_err() {
-        return None;
-    }
+    const ICON_SIZE: i32 = 32; // Use 32x32 for better quality
     
     let hdc = GetDC(None);
     if hdc.is_invalid() {
-        return None;
-    }
-    
-    let mut bm: BITMAP = std::mem::zeroed();
-    if GetObjectW(icon_info.hbmColor, std::mem::size_of::<BITMAP>() as i32, Some(&mut bm as *mut _ as *mut _)) == 0 {
-        ReleaseDC(None, hdc);
-        return None;
-    }
-    
-    let width = bm.bmWidth as u32;
-    let height = bm.bmHeight as u32;
-    
-    if width == 0 || height == 0 || width > 256 || height > 256 {
-        ReleaseDC(None, hdc);
         return None;
     }
     
@@ -138,14 +159,45 @@ unsafe fn icon_to_png_base64(hicon: windows::Win32::UI::WindowsAndMessaging::HIC
         return None;
     }
     
+    // Create a 32-bit bitmap
+    let hbmp = CreateCompatibleBitmap(hdc, ICON_SIZE, ICON_SIZE);
+    if hbmp.is_invalid() {
+        DeleteDC(hdc_mem);
+        ReleaseDC(None, hdc);
+        return None;
+    }
+    
+    let _old_bmp = SelectObject(hdc_mem, hbmp);
+    
+    // Draw the icon onto the bitmap
+    let drawn = DrawIconEx(
+        hdc_mem,
+        0,
+        0,
+        hicon,
+        ICON_SIZE,
+        ICON_SIZE,
+        0,
+        None,
+        DI_NORMAL,
+    );
+    
+    if drawn.is_err() {
+        DeleteObject(hbmp);
+        DeleteDC(hdc_mem);
+        ReleaseDC(None, hdc);
+        return None;
+    }
+    
+    // Prepare bitmap info for GetDIBits
     let mut bmp_info = BITMAPINFO {
         bmiHeader: BITMAPINFOHEADER {
             biSize: std::mem::size_of::<BITMAPINFOHEADER>() as u32,
-            biWidth: width as i32,
-            biHeight: -(height as i32), // Negative for top-down
+            biWidth: ICON_SIZE,
+            biHeight: -ICON_SIZE, // Negative for top-down DIB
             biPlanes: 1,
             biBitCount: 32,
-            biCompression: 0,
+            biCompression: 0, // BI_RGB
             biSizeImage: 0,
             biXPelsPerMeter: 0,
             biYPelsPerMeter: 0,
@@ -155,59 +207,61 @@ unsafe fn icon_to_png_base64(hicon: windows::Win32::UI::WindowsAndMessaging::HIC
         bmiColors: [std::mem::zeroed(); 1],
     };
     
-    let hbmp = CreateCompatibleBitmap(hdc, width as i32, height as i32);
-    if hbmp.is_invalid() {
-        DeleteDC(hdc_mem);
-        ReleaseDC(None, hdc);
-        return None;
-    }
+    // Allocate buffer for pixel data (BGRA format)
+    let size = (ICON_SIZE * ICON_SIZE * 4) as usize;
+    let mut bits: Vec<u8> = vec![0; size];
     
-    let _old = SelectObject(hdc_mem, hbmp);
-    SelectObject(hdc_mem, icon_info.hbmColor);
-    
-    let mut bits: Vec<u8> = vec![0; (width * height * 4) as usize];
+    // Get the bitmap bits
     let result = GetDIBits(
         hdc_mem,
         hbmp,
         0,
-        height,
+        ICON_SIZE as u32,
         Some(bits.as_mut_ptr() as *mut _),
         &mut bmp_info,
         DIB_RGB_COLORS,
     );
     
+    // Cleanup
+    SelectObject(hdc_mem, _old_bmp);
+    DeleteObject(hbmp);
+    DeleteDC(hdc_mem);
+    ReleaseDC(None, hdc);
+    
     if result == 0 {
-        DeleteObject(hbmp);
-        DeleteDC(hdc_mem);
-        ReleaseDC(None, hdc);
         return None;
     }
     
     // Convert BGRA to RGBA
     for i in (0..bits.len()).step_by(4) {
+        // Swap B and R channels: BGRA -> RGBA
         bits.swap(i, i + 2);
     }
     
-    DeleteObject(hbmp);
-    DeleteDC(hdc_mem);
-    ReleaseDC(None, hdc);
-    
     // Create image and encode to PNG
-    let img = RgbaImage::from_raw(width, height, bits)?;
-    let mut png_data = Vec::new();
-    {
-        let mut cursor = std::io::Cursor::new(&mut png_data);
-        image::write_buffer_with_format(
-            &mut cursor,
-            &img.into_raw(),
-            width,
-            height,
-            image::ColorType::Rgba8,
-            image::ImageFormat::Png,
-        ).ok()?;
+    if let Some(img) = RgbaImage::from_raw(ICON_SIZE as u32, ICON_SIZE as u32, bits) {
+        let mut png_data = Vec::new();
+        {
+            let mut cursor = std::io::Cursor::new(&mut png_data);
+            if image::write_buffer_with_format(
+                &mut cursor,
+                &img.into_raw(),
+                ICON_SIZE as u32,
+                ICON_SIZE as u32,
+                image::ColorType::Rgba8,
+                image::ImageFormat::Png,
+            ).is_ok() {
+                use base64::{Engine as _, engine::general_purpose};
+                let encoded = general_purpose::STANDARD.encode(&png_data);
+                // Verify the encoded data is not empty
+                if !encoded.is_empty() && encoded.len() > 100 {
+                    return Some(encoded);
+                }
+            }
+        }
     }
     
-    Some(base64::encode(&png_data))
+    None
 }
 
 #[cfg(not(windows))]
@@ -444,6 +498,15 @@ fn write_memory(state: tauri::State<SharedState>, address: String, data: Vec<u8>
 }
 
 #[tauri::command]
+fn get_memory_regions(pid: u32) -> Result<Vec<types::MemoryRegion>, String> {
+    let manager = process::get_process_manager();
+    let handle = manager.attach(pid).map_err(|e| e.to_string())?;
+    let mem = memory::create_memory(handle.as_ref()).map_err(|e| e.to_string())?;
+    
+    mem.query_regions().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_version() -> String {
     format!("Inspectra v{}", env!("CARGO_PKG_VERSION"))
 }
@@ -465,6 +528,7 @@ fn main() {
             rescan_memory,
             read_memory,
             write_memory,
+            get_memory_regions,
             get_version
         ])
         .run(tauri::generate_context!())
