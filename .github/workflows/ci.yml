@@ -106,7 +106,7 @@ jobs:
           librsvg2-dev \
           patchelf
     - name: Install tarpaulin
-      run: cargo install cargo-tarpaulin
+      run: cargo install cargo-tarpaulin --version 0.35.5 --locked --force
     - name: Generate coverage
       run: cargo tarpaulin --verbose --all-features -p inspectra-core --timeout 120 --out Xml
     - name: Upload coverage

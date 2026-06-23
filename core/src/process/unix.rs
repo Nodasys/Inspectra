@@ -4,6 +4,8 @@ use super::{ProcessHandle, ProcessInfo, ProcessManager};
 use crate::error::{InspectraError, Result};
 use crate::types::{Architecture, Pid};
 use std::fs;
+use std::path::Path;
+use std::process::Command;
 
 pub struct UnixProcessManager;
 
@@ -11,16 +13,8 @@ impl UnixProcessManager {
     pub fn new() -> Self {
         Self
     }
-}
 
-impl Default for UnixProcessManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl ProcessManager for UnixProcessManager {
-    fn list_processes(&self) -> Result<Vec<ProcessInfo>> {
+    fn list_procfs_processes() -> Vec<ProcessInfo> {
         let mut processes = Vec::new();
 
         if let Ok(entries) = fs::read_dir("/proc") {
@@ -42,12 +36,96 @@ impl ProcessManager for UnixProcessManager {
             }
         }
 
-        Ok(processes)
+        processes
+    }
+
+    fn list_ps_processes() -> Result<Vec<ProcessInfo>> {
+        let output = Command::new("ps")
+            .args(["-axo", "pid=,comm="])
+            .output()
+            .map_err(|e| InspectraError::process(format!("Failed to run ps: {}", e)))?;
+
+        if !output.status.success() {
+            return Err(InspectraError::process(format!(
+                "ps exited with status {}",
+                output.status
+            )));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| {
+                let mut parts = line.trim().splitn(2, char::is_whitespace);
+                let pid = parts.next()?.parse::<Pid>().ok()?;
+                let path = parts.next().unwrap_or_default().trim().to_string();
+                let name = Path::new(&path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(&path)
+                    .to_string();
+
+                Some(ProcessInfo {
+                    pid,
+                    name,
+                    path,
+                    architecture: Architecture::Unknown,
+                    memory_usage: 0,
+                    is_elevated: false,
+                })
+            })
+            .collect())
+    }
+
+    fn process_exists(pid: Pid) -> bool {
+        if Path::new("/proc").exists() {
+            return Path::new(&format!("/proc/{}", pid)).exists();
+        }
+
+        let result = unsafe { libc::kill(pid as i32, 0) };
+        if result == 0 {
+            return true;
+        }
+
+        std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+    }
+
+    fn process_name(pid: Pid) -> String {
+        if Path::new("/proc").exists() {
+            return fs::read_to_string(format!("/proc/{}/comm", pid))
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+        }
+
+        let output = Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "comm="])
+            .output();
+
+        output
+            .ok()
+            .filter(|out| out.status.success())
+            .map(|out| String::from_utf8_lossy(&out.stdout).trim().to_string())
+            .unwrap_or_default()
+    }
+}
+
+impl Default for UnixProcessManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ProcessManager for UnixProcessManager {
+    fn list_processes(&self) -> Result<Vec<ProcessInfo>> {
+        if Path::new("/proc").exists() {
+            return Ok(Self::list_procfs_processes());
+        }
+
+        Self::list_ps_processes()
     }
 
     fn attach(&self, pid: Pid) -> Result<Box<dyn ProcessHandle>> {
-        // Check if process exists
-        if !std::path::Path::new(&format!("/proc/{}", pid)).exists() {
+        if !Self::process_exists(pid) {
             return Err(InspectraError::InvalidPid(pid));
         }
 
@@ -73,14 +151,11 @@ impl ProcessHandle for UnixProcessHandle {
     }
 
     fn is_alive(&self) -> bool {
-        std::path::Path::new(&format!("/proc/{}", self.pid)).exists()
+        UnixProcessManager::process_exists(self.pid)
     }
 
     fn info(&self) -> Result<ProcessInfo> {
-        let name = fs::read_to_string(format!("/proc/{}/comm", self.pid))
-            .unwrap_or_default()
-            .trim()
-            .to_string();
+        let name = UnixProcessManager::process_name(self.pid);
 
         Ok(ProcessInfo {
             pid: self.pid,
