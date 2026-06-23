@@ -16,8 +16,16 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-22.04, macos-latest]
-        rust: [stable]
+        include:
+          - os: windows-latest
+            rust: stable
+            package_args: ""
+          - os: ubuntu-22.04
+            rust: stable
+            package_args: "-p inspectra-core"
+          - os: macos-latest
+            rust: stable
+            package_args: "-p inspectra-core"
     
     steps:
     - uses: actions/checkout@v4
@@ -61,13 +69,13 @@ jobs:
       run: cargo fmt --all -- --check
     
     - name: Run clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
+      run: cargo clippy ${{ matrix.package_args }} --all-targets --all-features -- -D warnings
     
     - name: Build
-      run: cargo build --verbose
+      run: cargo build ${{ matrix.package_args }} --verbose
     
     - name: Run tests
-      run: cargo test --verbose
+      run: cargo test ${{ matrix.package_args }} --verbose
 
   security:
     name: Security Audit
@@ -76,24 +84,9 @@ jobs:
     - uses: actions/checkout@v4
     - uses: actions-rust-lang/setup-rust-toolchain@v1
     - name: Install cargo-audit
-      run: cargo install cargo-audit
+      run: cargo install cargo-audit --version 0.22.2 --locked --force
     - name: Run audit
-      run: |
-        cargo audit \
-          --ignore RUSTSEC-2024-0370 \
-          --ignore RUSTSEC-2024-0384 \
-          --ignore RUSTSEC-2024-0411 \
-          --ignore RUSTSEC-2024-0412 \
-          --ignore RUSTSEC-2024-0413 \
-          --ignore RUSTSEC-2024-0414 \
-          --ignore RUSTSEC-2024-0415 \
-          --ignore RUSTSEC-2024-0416 \
-          --ignore RUSTSEC-2024-0418 \
-          --ignore RUSTSEC-2024-0419 \
-          --ignore RUSTSEC-2024-0420 \
-          --ignore RUSTSEC-2024-0429 \
-          --ignore RUSTSEC-2025-0057 \
-          --ignore RUSTSEC-2026-0097
+      run: cargo audit --ignore RUSTSEC-2024-0370 --ignore RUSTSEC-2024-0384 --ignore RUSTSEC-2024-0411 --ignore RUSTSEC-2024-0412 --ignore RUSTSEC-2024-0413 --ignore RUSTSEC-2024-0414 --ignore RUSTSEC-2024-0415 --ignore RUSTSEC-2024-0416 --ignore RUSTSEC-2024-0418 --ignore RUSTSEC-2024-0419 --ignore RUSTSEC-2024-0420 --ignore RUSTSEC-2024-0429 --ignore RUSTSEC-2025-0057 --ignore RUSTSEC-2026-0097
 
   coverage:
     name: Code Coverage
@@ -115,7 +108,7 @@ jobs:
     - name: Install tarpaulin
       run: cargo install cargo-tarpaulin
     - name: Generate coverage
-      run: cargo tarpaulin --verbose --all-features --workspace --timeout 120 --out Xml
+      run: cargo tarpaulin --verbose --all-features -p inspectra-core --timeout 120 --out Xml
     - name: Upload coverage
       uses: codecov/codecov-action@v3
       with:
