@@ -6,6 +6,7 @@ use crate::process::ProcessHandle;
 use crate::types::{Address, MemoryRegion, Protection, RegionType, Size};
 use std::fs;
 use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::Path;
 
 pub struct UnixMemory {
     pid: u32,
@@ -13,6 +14,12 @@ pub struct UnixMemory {
 
 impl UnixMemory {
     pub fn new(process: &dyn ProcessHandle) -> Result<Self> {
+        if !Path::new("/proc").exists() {
+            return Err(InspectraError::platform(
+                "Unix memory access is currently implemented for procfs platforms only",
+            ));
+        }
+
         Ok(Self { pid: process.pid() })
     }
 
