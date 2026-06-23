@@ -30,6 +30,7 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: 1.85.1
   RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
   RELEASE_DRAFT: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.draft) || 'false' }}
   RELEASE_PRERELEASE: ${{ github.event_name == 'workflow_dispatch' && format('{0}', inputs.prerelease) || format('{0}', contains(github.ref_name, '-')) }}
@@ -67,8 +68,9 @@ jobs:
           fetch-depth: 0
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: ${{ matrix.rust_targets }}
 
       - name: Install Node.js
