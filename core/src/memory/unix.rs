@@ -101,7 +101,7 @@ impl Memory for UnixMemory {
         regions
             .into_iter()
             .find(|r| address >= r.base_address && address < r.base_address + r.size)
-            .ok_or_else(|| InspectraError::InvalidAddress(address))
+            .ok_or(InspectraError::InvalidAddress(address))
     }
 
     fn protect(

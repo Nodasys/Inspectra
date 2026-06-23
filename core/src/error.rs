@@ -60,4 +60,9 @@ impl InspectraError {
     pub fn permission_denied(msg: impl Into<String>) -> Self {
         Self::PermissionDenied(msg.into())
     }
+
+    /// Create a platform error
+    pub fn platform(msg: impl Into<String>) -> Self {
+        Self::Platform(msg.into())
+    }
 }

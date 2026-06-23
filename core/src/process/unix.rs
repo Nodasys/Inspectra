@@ -4,13 +4,18 @@ use super::{ProcessHandle, ProcessInfo, ProcessManager};
 use crate::error::{InspectraError, Result};
 use crate::types::{Architecture, Pid};
 use std::fs;
-use std::sync::Arc;
 
 pub struct UnixProcessManager;
 
 impl UnixProcessManager {
     pub fn new() -> Self {
         Self
+    }
+}
+
+impl Default for UnixProcessManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
