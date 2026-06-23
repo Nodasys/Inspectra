@@ -34,7 +34,7 @@ impl PointerChain {
                 let bytes = memory.read(current_address, std::mem::size_of::<usize>())?;
                 current_address = usize::from_le_bytes(bytes.try_into().unwrap());
             }
-            
+
             // Apply offset
             current_address = (current_address as isize + offset) as usize;
         }
@@ -84,11 +84,7 @@ impl PointerScanner {
     }
 
     /// Scan for pointers to a target address
-    pub fn scan(
-        &self,
-        memory: &dyn Memory,
-        target_address: Address,
-    ) -> Result<Vec<PointerChain>> {
+    pub fn scan(&self, memory: &dyn Memory, target_address: Address) -> Result<Vec<PointerChain>> {
         let mut results = Vec::new();
         let regions = memory.query_regions()?;
 
@@ -106,29 +102,20 @@ impl PointerScanner {
                         break;
                     }
 
-                    let bytes: [u8; std::mem::size_of::<usize>()] =
-                        data[i..i + std::mem::size_of::<usize>()]
-                            .try_into()
-                            .unwrap();
+                    let bytes: [u8; std::mem::size_of::<usize>()] = data
+                        [i..i + std::mem::size_of::<usize>()]
+                        .try_into()
+                        .unwrap();
                     let value = usize::from_le_bytes(bytes);
                     let pointer_address = region.base_address + i;
 
-                    pointer_map
-                        .entry(value)
-                        .or_insert_with(Vec::new)
-                        .push(pointer_address);
+                    pointer_map.entry(value).or_default().push(pointer_address);
                 }
             }
         }
 
         // Build pointer chains
-        self.build_chains(
-            &pointer_map,
-            target_address,
-            Vec::new(),
-            0,
-            &mut results,
-        );
+        self.build_chains(&pointer_map, target_address, Vec::new(), 0, &mut results);
 
         Ok(results)
     }
@@ -160,13 +147,7 @@ impl PointerScanner {
                         results.push(PointerChain::new(pointer_addr, offsets.clone()));
                     } else {
                         // Continue searching
-                        self.build_chains(
-                            pointer_map,
-                            pointer_addr,
-                            offsets,
-                            level + 1,
-                            results,
-                        );
+                        self.build_chains(pointer_map, pointer_addr, offsets, level + 1, results);
                     }
                 }
             }

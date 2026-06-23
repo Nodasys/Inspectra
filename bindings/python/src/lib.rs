@@ -1,8 +1,8 @@
 //! Python bindings for Inspectra
+#![allow(non_local_definitions)]
 
 use pyo3::prelude::*;
-use pyo3::types::PyList;
-use inspectra_core;
+use pyo3::types::{PyList, PyModule};
 
 /// Process information exposed to Python
 #[pyclass]
@@ -31,43 +31,49 @@ impl ProcessManager {
     }
 
     /// List all processes
-    fn list_processes(&self, py: Python) -> PyResult<PyObject> {
+    fn list_processes(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let processes = self
             .manager
             .list_processes()
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
-        let list = PyList::empty_bound(py);
+        let list = PyList::empty(py);
         for proc in processes {
-            let py_proc = Py::new(py, ProcessInfo {
-                pid: proc.pid,
-                name: proc.name,
-                path: proc.path.unwrap_or_default(),
-            })?;
+            let py_proc = Py::new(
+                py,
+                ProcessInfo {
+                    pid: proc.pid,
+                    name: proc.name,
+                    path: proc.path,
+                },
+            )?;
             list.append(py_proc)?;
         }
 
-        Ok(list.into())
+        Ok(list.into_any().unbind())
     }
 
     /// Find processes by name
-    fn find_by_name(&self, py: Python, name: &str) -> PyResult<PyObject> {
+    fn find_by_name(&self, py: Python<'_>, name: &str) -> PyResult<Py<PyAny>> {
         let processes = self
             .manager
             .find_by_name(name)
             .map_err(|e| PyErr::new::<pyo3::exceptions::PyRuntimeError, _>(e.to_string()))?;
 
-        let list = PyList::empty_bound(py);
+        let list = PyList::empty(py);
         for proc in processes {
-            let py_proc = Py::new(py, ProcessInfo {
-                pid: proc.pid,
-                name: proc.name,
-                path: proc.path.unwrap_or_default(),
-            })?;
+            let py_proc = Py::new(
+                py,
+                ProcessInfo {
+                    pid: proc.pid,
+                    name: proc.name,
+                    path: proc.path,
+                },
+            )?;
             list.append(py_proc)?;
         }
 
-        Ok(list.into())
+        Ok(list.into_any().unbind())
     }
 }
 
@@ -100,7 +106,7 @@ impl Scanner {
 
 /// Initialize the Inspectra Python module
 #[pymodule]
-fn inspectra(_py: Python, m: &PyModule) -> PyResult<()> {
+fn inspectra(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ProcessManager>()?;
     m.add_class::<ProcessInfo>()?;
     m.add_class::<Scanner>()?;

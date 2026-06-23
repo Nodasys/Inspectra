@@ -45,7 +45,7 @@ impl Pattern {
     /// Find all occurrences in buffer
     pub fn find_all(&self, buffer: &[u8]) -> Vec<usize> {
         let mut results = Vec::new();
-        
+
         for i in 0..=buffer.len().saturating_sub(self.bytes.len()) {
             if self.matches(&buffer[i..]) {
                 results.push(i);

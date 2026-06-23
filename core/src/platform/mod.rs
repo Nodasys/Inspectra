@@ -2,10 +2,10 @@
 
 use crate::error::Result;
 
-#[cfg(windows)]
-pub mod windows;
 #[cfg(unix)]
 pub mod unix;
+#[cfg(windows)]
+pub mod windows;
 
 /// Platform information
 #[derive(Debug, Clone)]

@@ -3,16 +3,16 @@
 use super::Memory;
 use crate::error::{InspectraError, Result};
 use crate::process::ProcessHandle;
-use crate::types::{Address, MemoryRegion, Protection, RegionType, Size, Pid};
+use crate::types::{Address, MemoryRegion, Pid, Protection, RegionType, Size};
+use std::sync::Mutex;
+use windows::Win32::Foundation::HANDLE;
 use windows::Win32::System::Diagnostics::Debug::{ReadProcessMemory, WriteProcessMemory};
 use windows::Win32::System::Memory::{
     VirtualAllocEx, VirtualFreeEx, VirtualProtectEx, VirtualQueryEx, MEMORY_BASIC_INFORMATION,
-    MEM_COMMIT, MEM_IMAGE, MEM_MAPPED, MEM_PRIVATE, MEM_RELEASE, MEM_RESERVE,
-    PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_NOACCESS, PAGE_READONLY,
-    PAGE_READWRITE, PAGE_PROTECTION_FLAGS,
+    MEM_COMMIT, MEM_IMAGE, MEM_MAPPED, MEM_PRIVATE, MEM_RELEASE, MEM_RESERVE, PAGE_EXECUTE,
+    PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_NOACCESS, PAGE_PROTECTION_FLAGS, PAGE_READONLY,
+    PAGE_READWRITE,
 };
-use windows::Win32::Foundation::HANDLE;
-use std::sync::Mutex;
 
 pub struct WindowsMemory {
     pid: Pid,
@@ -22,32 +22,39 @@ pub struct WindowsMemory {
 impl WindowsMemory {
     pub fn new(process: &dyn ProcessHandle) -> Result<Self> {
         // Get the raw handle from the process
-        let raw_handle = process.as_raw_handle()
+        let raw_handle = process
+            .as_raw_handle()
             .ok_or_else(|| InspectraError::memory("Failed to get process handle"))?;
-        
+
         let pid = process.pid();
-        
+
         // Use the handle directly - we'll recreate it if needed
         Ok(Self {
             pid,
-            handle: Mutex::new(unsafe { HANDLE(raw_handle as isize) }),
+            handle: Mutex::new(HANDLE(raw_handle as isize)),
         })
     }
-    
+
     fn ensure_handle(&self) -> Result<HANDLE> {
         // Check if handle is still valid, if not recreate it
         let mut handle = self.handle.lock().unwrap();
         unsafe {
             use windows::Win32::System::Threading::OpenProcess;
-            use windows::Win32::System::Threading::{PROCESS_VM_READ, PROCESS_VM_WRITE, PROCESS_VM_OPERATION, PROCESS_QUERY_INFORMATION};
-            
+            use windows::Win32::System::Threading::{
+                PROCESS_QUERY_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE,
+            };
+
             // Try to open process again if handle is invalid
             if handle.is_invalid() {
                 let new_handle = OpenProcess(
-                    PROCESS_VM_READ | PROCESS_VM_WRITE | PROCESS_VM_OPERATION | PROCESS_QUERY_INFORMATION,
+                    PROCESS_VM_READ
+                        | PROCESS_VM_WRITE
+                        | PROCESS_VM_OPERATION
+                        | PROCESS_QUERY_INFORMATION,
                     false,
                     self.pid,
-                ).map_err(|e| InspectraError::memory(format!("Failed to reopen process: {}", e)))?;
+                )
+                .map_err(|e| InspectraError::memory(format!("Failed to reopen process: {}", e)))?;
                 *handle = new_handle;
             }
         }
@@ -71,21 +78,24 @@ impl WindowsMemory {
             || prot == PAGE_READWRITE
             || prot == PAGE_EXECUTE_READ
             || prot == PAGE_EXECUTE_READWRITE;
-        
-        let write = prot == PAGE_READWRITE || prot == PAGE_EXECUTE_READWRITE;
-        
-        let execute = prot == PAGE_EXECUTE
-            || prot == PAGE_EXECUTE_READ
-            || prot == PAGE_EXECUTE_READWRITE;
 
-        Protection { read, write, execute }
+        let write = prot == PAGE_READWRITE || prot == PAGE_EXECUTE_READWRITE;
+
+        let execute =
+            prot == PAGE_EXECUTE || prot == PAGE_EXECUTE_READ || prot == PAGE_EXECUTE_READWRITE;
+
+        Protection {
+            read,
+            write,
+            execute,
+        }
     }
 }
 
 impl Memory for WindowsMemory {
     fn read(&self, address: Address, size: Size) -> Result<Vec<u8>> {
         let handle = self.ensure_handle()?;
-        
+
         unsafe {
             let mut buffer = vec![0u8; size];
             let mut bytes_read = 0;
@@ -106,7 +116,7 @@ impl Memory for WindowsMemory {
 
     fn write(&self, address: Address, data: &[u8]) -> Result<usize> {
         let handle = self.ensure_handle()?;
-        
+
         unsafe {
             let mut bytes_written = 0;
 
@@ -125,7 +135,7 @@ impl Memory for WindowsMemory {
 
     fn query_regions(&self) -> Result<Vec<MemoryRegion>> {
         let handle = self.ensure_handle()?;
-        
+
         let mut regions = Vec::new();
         let mut address: usize = 0;
 
@@ -175,7 +185,7 @@ impl Memory for WindowsMemory {
 
     fn query_region(&self, address: Address) -> Result<MemoryRegion> {
         let handle = self.ensure_handle()?;
-        
+
         unsafe {
             let mut mbi = MEMORY_BASIC_INFORMATION::default();
             let result = VirtualQueryEx(
@@ -211,7 +221,7 @@ impl Memory for WindowsMemory {
 
     fn protect(&self, address: Address, size: Size, protection: Protection) -> Result<Protection> {
         let handle = self.ensure_handle()?;
-        
+
         unsafe {
             let new_protect = Self::convert_protection(protection);
             let mut old_protect = PAGE_PROTECTION_FLAGS::default();
@@ -231,16 +241,10 @@ impl Memory for WindowsMemory {
 
     fn allocate(&self, size: Size, protection: Protection) -> Result<Address> {
         let handle = self.ensure_handle()?;
-        
+
         unsafe {
             let protect = Self::convert_protection(protection);
-            let address = VirtualAllocEx(
-                handle,
-                None,
-                size,
-                MEM_COMMIT | MEM_RESERVE,
-                protect,
-            );
+            let address = VirtualAllocEx(handle, None, size, MEM_COMMIT | MEM_RESERVE, protect);
 
             if address.is_null() {
                 return Err(InspectraError::memory("Allocation failed"));
@@ -252,7 +256,7 @@ impl Memory for WindowsMemory {
 
     fn free(&self, address: Address) -> Result<()> {
         let handle = self.ensure_handle()?;
-        
+
         unsafe {
             VirtualFreeEx(handle, address as *mut _, 0, MEM_RELEASE)
                 .map_err(|e| InspectraError::memory(format!("Free failed: {}", e)))?;

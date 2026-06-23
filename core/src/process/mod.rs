@@ -4,15 +4,15 @@ use crate::error::Result;
 use crate::types::{Architecture, Pid};
 use serde::{Deserialize, Serialize};
 
-#[cfg(windows)]
-mod windows;
 #[cfg(unix)]
 mod unix;
-
 #[cfg(windows)]
-pub use self::windows::*;
+mod windows;
+
 #[cfg(unix)]
 pub use self::unix::*;
+#[cfg(windows)]
+pub use self::windows::*;
 
 /// Process information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -38,11 +38,11 @@ pub trait ProcessHandle: Send + Sync {
 
     /// Terminate the process (requires elevated privileges)
     fn terminate(&self) -> Result<()>;
-    
+
     /// Get the raw handle (platform-specific)
     #[cfg(windows)]
     fn as_raw_handle(&self) -> Option<*mut std::ffi::c_void>;
-    
+
     #[cfg(not(windows))]
     fn as_raw_handle(&self) -> Option<*mut std::ffi::c_void> {
         None
@@ -50,7 +50,7 @@ pub trait ProcessHandle: Send + Sync {
 }
 
 /// Process manager for listing and attaching to processes
-pub trait ProcessManager {
+pub trait ProcessManager: Send + Sync {
     /// List all running processes
     fn list_processes(&self) -> Result<Vec<ProcessInfo>>;
 
