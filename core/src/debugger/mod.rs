@@ -120,10 +120,9 @@ impl CodePatcher {
         use crate::types::Protection;
 
         // Allocate executable memory
-        let address = self.memory.allocate(
-            shellcode.len(),
-            Protection::new(true, true, true),
-        )?;
+        let address = self
+            .memory
+            .allocate(shellcode.len(), Protection::new(true, true, true))?;
 
         // Write shellcode
         self.memory.write(address, shellcode)?;

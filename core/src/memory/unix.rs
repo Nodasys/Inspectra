@@ -13,9 +13,7 @@ pub struct UnixMemory {
 
 impl UnixMemory {
     pub fn new(process: &dyn ProcessHandle) -> Result<Self> {
-        Ok(Self {
-            pid: process.pid(),
-        })
+        Ok(Self { pid: process.pid() })
     }
 
     fn parse_maps_line(line: &str) -> Option<MemoryRegion> {
@@ -94,22 +92,24 @@ impl Memory for UnixMemory {
         let content = fs::read_to_string(&maps_path)
             .map_err(|e| InspectraError::memory(format!("Cannot read maps: {}", e)))?;
 
-        Ok(content
-            .lines()
-            .filter_map(Self::parse_maps_line)
-            .collect())
+        Ok(content.lines().filter_map(Self::parse_maps_line).collect())
     }
 
     fn query_region(&self, address: Address) -> Result<MemoryRegion> {
         let regions = self.query_regions()?;
-        
+
         regions
             .into_iter()
             .find(|r| address >= r.base_address && address < r.base_address + r.size)
             .ok_or_else(|| InspectraError::InvalidAddress(address))
     }
 
-    fn protect(&self, _address: Address, _size: Size, _protection: Protection) -> Result<Protection> {
+    fn protect(
+        &self,
+        _address: Address,
+        _size: Size,
+        _protection: Protection,
+    ) -> Result<Protection> {
         // mprotect would require ptrace or other system calls
         Err(InspectraError::platform(
             "Memory protection not yet implemented on Unix",

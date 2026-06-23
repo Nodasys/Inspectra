@@ -6,13 +6,12 @@ use crate::types::{Architecture, Pid};
 use std::sync::Arc;
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
-    TH32CS_SNAPPROCESS,
+    CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 };
 use windows::Win32::System::Threading::{
-    OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION,
-    PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE, QueryFullProcessImageNameW,
-    PROCESS_NAME_WIN32,
+    OpenProcess, QueryFullProcessImageNameW, TerminateProcess, PROCESS_NAME_WIN32,
+    PROCESS_QUERY_INFORMATION, PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_OPERATION,
+    PROCESS_VM_READ, PROCESS_VM_WRITE,
 };
 
 pub struct WindowsProcessManager;
@@ -23,11 +22,18 @@ impl WindowsProcessManager {
     }
 }
 
+impl Default for WindowsProcessManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProcessManager for WindowsProcessManager {
     fn list_processes(&self) -> Result<Vec<ProcessInfo>> {
         unsafe {
-            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)
-                .map_err(|e| InspectraError::process(format!("Failed to create snapshot: {}", e)))?;
+            let snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0).map_err(|e| {
+                InspectraError::process(format!("Failed to create snapshot: {}", e))
+            })?;
 
             let mut processes = Vec::new();
             let mut entry = PROCESSENTRY32W {
@@ -46,7 +52,7 @@ impl ProcessManager for WindowsProcessManager {
                     );
 
                     let pid = entry.th32ProcessID;
-                    
+
                     // Try to get the full path of the process
                     let path = get_process_path(pid).unwrap_or_default();
 
@@ -102,15 +108,17 @@ impl ProcessManager for WindowsProcessManager {
 fn get_process_path(pid: Pid) -> Result<String> {
     unsafe {
         use windows::core::PWSTR;
-        
+
         // Try with limited information first (works for more processes)
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
             .or_else(|_| OpenProcess(PROCESS_QUERY_INFORMATION, false, pid))
-            .map_err(|e| InspectraError::process(format!("Failed to open process {}: {}", pid, e)))?;
+            .map_err(|e| {
+                InspectraError::process(format!("Failed to open process {}: {}", pid, e))
+            })?;
 
         let mut buffer = vec![0u16; 1024];
         let mut size = buffer.len() as u32;
-        
+
         let pwstr = PWSTR::from_raw(buffer.as_mut_ptr());
         if QueryFullProcessImageNameW(handle, PROCESS_NAME_WIN32, pwstr, &mut size).is_ok() {
             let len = buffer.iter().position(|&c| c == 0).unwrap_or(size as usize);
@@ -118,7 +126,7 @@ fn get_process_path(pid: Pid) -> Result<String> {
             let _ = CloseHandle(handle);
             return Ok(path);
         }
-        
+
         let _ = CloseHandle(handle);
         Ok(String::new())
     }
@@ -149,7 +157,7 @@ impl ProcessHandle for WindowsProcessHandle {
 
     fn is_alive(&self) -> bool {
         // Check if handle is still valid
-        self.handle.0.is_invalid() == false
+        !self.handle.0.is_invalid()
     }
 
     fn info(&self) -> Result<ProcessInfo> {
@@ -170,8 +178,8 @@ impl ProcessHandle for WindowsProcessHandle {
             Ok(())
         }
     }
-    
+
     fn as_raw_handle(&self) -> Option<*mut std::ffi::c_void> {
-        Some(self.handle.0.0 as *mut _)
+        Some(self.handle.0 .0 as *mut _)
     }
 }

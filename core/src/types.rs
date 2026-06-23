@@ -52,7 +52,11 @@ pub struct Protection {
 
 impl Protection {
     pub fn new(read: bool, write: bool, execute: bool) -> Self {
-        Self { read, write, execute }
+        Self {
+            read,
+            write,
+            execute,
+        }
     }
 
     pub fn read_only() -> Self {

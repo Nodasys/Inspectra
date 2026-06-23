@@ -35,9 +35,7 @@ type SharedState = Arc<Mutex<AppState>>;
 #[tauri::command]
 fn list_processes() -> Result<Vec<ProcessInfo>, String> {
     let manager = process::get_process_manager();
-    let processes = manager
-        .list_processes()
-        .map_err(|e| e.to_string())?;
+    let processes = manager.list_processes().map_err(|e| e.to_string())?;
 
     // Extract icons with better error handling
     Ok(processes
@@ -49,7 +47,7 @@ fn list_processes() -> Result<Vec<ProcessInfo>, String> {
             } else {
                 None
             };
-            
+
             ProcessInfo {
                 pid: p.pid,
                 name: p.name,
@@ -69,12 +67,12 @@ fn extract_process_icon_robust(path: &str, _pid: u32) -> Option<String> {
     use windows::core::PCWSTR;
     use windows::Win32::Storage::FileSystem::FILE_FLAGS_AND_ATTRIBUTES;
     use windows::Win32::UI::Shell::{SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_SMALLICON};
-    use windows::Win32::UI::WindowsAndMessaging::{HICON, DestroyIcon};
-    
+    use windows::Win32::UI::WindowsAndMessaging::{DestroyIcon, HICON};
+
     if path.is_empty() {
         return None;
     }
-    
+
     unsafe {
         // Convert path to wide string
         let wide_path: Vec<u16> = OsStr::new(path).encode_wide().chain(Some(0)).collect();
@@ -82,9 +80,9 @@ fn extract_process_icon_robust(path: &str, _pid: u32) -> Option<String> {
             return None;
         }
         let path_ptr = PCWSTR::from_raw(wide_path.as_ptr());
-        
+
         let mut file_info: SHFILEINFOW = std::mem::zeroed();
-        
+
         // Get icon handle - use SHGFI_SMALLICON for 16x16 icons
         let result = SHGetFileInfoW(
             path_ptr,
@@ -93,28 +91,22 @@ fn extract_process_icon_robust(path: &str, _pid: u32) -> Option<String> {
             std::mem::size_of::<SHFILEINFOW>() as u32,
             SHGFI_ICON | SHGFI_SMALLICON,
         );
-        
+
         if result == 0 {
             return None;
         }
-        
+
         let hicon: HICON = file_info.hIcon;
         if hicon.is_invalid() {
             return None;
         }
-        
+
         // Convert icon to PNG base64 using DrawIconEx method (more reliable)
         let icon_result = icon_to_png_base64_draw(hicon);
         let _ = DestroyIcon(hicon);
-        
+
         icon_result.map(|data| format!("data:image/png;base64,{}", data))
     }
-}
-
-// Keep old function for fallback
-#[cfg(windows)]
-fn extract_process_icon(path: &str, pid: u32) -> Option<String> {
-    extract_process_icon_robust(path, pid)
 }
 
 // Test function to verify icon extraction
@@ -125,7 +117,7 @@ fn test_icon_extraction() {
         "C:\\Windows\\System32\\notepad.exe",
         "C:\\Windows\\System32\\calc.exe",
     ];
-    
+
     for path in test_paths {
         if let Some(icon) = extract_process_icon_robust(path, 0) {
             println!("Successfully extracted icon from: {}", path);
@@ -137,28 +129,29 @@ fn test_icon_extraction() {
 }
 
 #[cfg(windows)]
-unsafe fn icon_to_png_base64_draw(hicon: windows::Win32::UI::WindowsAndMessaging::HICON) -> Option<String> {
+unsafe fn icon_to_png_base64_draw(
+    hicon: windows::Win32::UI::WindowsAndMessaging::HICON,
+) -> Option<String> {
+    use image::RgbaImage;
     use windows::Win32::Graphics::Gdi::{
-        GetDC, CreateCompatibleDC, CreateCompatibleBitmap, SelectObject, 
-        GetDIBits, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS,
-        DeleteObject, DeleteDC, ReleaseDC
+        CreateCompatibleBitmap, CreateCompatibleDC, DeleteDC, DeleteObject, GetDC, GetDIBits,
+        ReleaseDC, SelectObject, BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS,
     };
     use windows::Win32::UI::WindowsAndMessaging::{DrawIconEx, DI_NORMAL};
-    use image::RgbaImage;
-    
+
     const ICON_SIZE: i32 = 32; // Use 32x32 for better quality
-    
+
     let hdc = GetDC(None);
     if hdc.is_invalid() {
         return None;
     }
-    
+
     let hdc_mem = CreateCompatibleDC(hdc);
     if hdc_mem.is_invalid() {
         ReleaseDC(None, hdc);
         return None;
     }
-    
+
     // Create a 32-bit bitmap
     let hbmp = CreateCompatibleBitmap(hdc, ICON_SIZE, ICON_SIZE);
     if hbmp.is_invalid() {
@@ -166,29 +159,21 @@ unsafe fn icon_to_png_base64_draw(hicon: windows::Win32::UI::WindowsAndMessaging
         ReleaseDC(None, hdc);
         return None;
     }
-    
+
     let _old_bmp = SelectObject(hdc_mem, hbmp);
-    
+
     // Draw the icon onto the bitmap
     let drawn = DrawIconEx(
-        hdc_mem,
-        0,
-        0,
-        hicon,
-        ICON_SIZE,
-        ICON_SIZE,
-        0,
-        None,
-        DI_NORMAL,
+        hdc_mem, 0, 0, hicon, ICON_SIZE, ICON_SIZE, 0, None, DI_NORMAL,
     );
-    
+
     if drawn.is_err() {
         DeleteObject(hbmp);
         DeleteDC(hdc_mem);
         ReleaseDC(None, hdc);
         return None;
     }
-    
+
     // Prepare bitmap info for GetDIBits
     let mut bmp_info = BITMAPINFO {
         bmiHeader: BITMAPINFOHEADER {
@@ -206,11 +191,11 @@ unsafe fn icon_to_png_base64_draw(hicon: windows::Win32::UI::WindowsAndMessaging
         },
         bmiColors: [std::mem::zeroed(); 1],
     };
-    
+
     // Allocate buffer for pixel data (BGRA format)
     let size = (ICON_SIZE * ICON_SIZE * 4) as usize;
     let mut bits: Vec<u8> = vec![0; size];
-    
+
     // Get the bitmap bits
     let result = GetDIBits(
         hdc_mem,
@@ -221,23 +206,23 @@ unsafe fn icon_to_png_base64_draw(hicon: windows::Win32::UI::WindowsAndMessaging
         &mut bmp_info,
         DIB_RGB_COLORS,
     );
-    
+
     // Cleanup
     SelectObject(hdc_mem, _old_bmp);
     DeleteObject(hbmp);
     DeleteDC(hdc_mem);
     ReleaseDC(None, hdc);
-    
+
     if result == 0 {
         return None;
     }
-    
+
     // Convert BGRA to RGBA
     for i in (0..bits.len()).step_by(4) {
         // Swap B and R channels: BGRA -> RGBA
         bits.swap(i, i + 2);
     }
-    
+
     // Create image and encode to PNG
     if let Some(img) = RgbaImage::from_raw(ICON_SIZE as u32, ICON_SIZE as u32, bits) {
         let mut png_data = Vec::new();
@@ -250,8 +235,10 @@ unsafe fn icon_to_png_base64_draw(hicon: windows::Win32::UI::WindowsAndMessaging
                 ICON_SIZE as u32,
                 image::ColorType::Rgba8,
                 image::ImageFormat::Png,
-            ).is_ok() {
-                use base64::{Engine as _, engine::general_purpose};
+            )
+            .is_ok()
+            {
+                use base64::{engine::general_purpose, Engine as _};
                 let encoded = general_purpose::STANDARD.encode(&png_data);
                 // Verify the encoded data is not empty
                 if !encoded.is_empty() && encoded.len() > 100 {
@@ -260,7 +247,7 @@ unsafe fn icon_to_png_base64_draw(hicon: windows::Win32::UI::WindowsAndMessaging
             }
         }
     }
-    
+
     None
 }
 
@@ -268,7 +255,6 @@ unsafe fn icon_to_png_base64_draw(hicon: windows::Win32::UI::WindowsAndMessaging
 fn extract_process_icon(_path: &str, _pid: u32) -> Option<String> {
     None
 }
-
 
 #[tauri::command]
 fn attach_process(state: tauri::State<SharedState>, pid: u32) -> Result<String, String> {
@@ -288,6 +274,7 @@ fn attach_process(state: tauri::State<SharedState>, pid: u32) -> Result<String, 
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 fn scan_memory(
     state: tauri::State<SharedState>,
     scan_type: String,
@@ -299,9 +286,7 @@ fn scan_memory(
     aligned: bool,
 ) -> Result<Vec<ScanResult>, String> {
     let app_state = state.lock().unwrap();
-    let pid = app_state
-        .attached_pid
-        .ok_or("No process attached")?;
+    let pid = app_state.attached_pid.ok_or("No process attached")?;
     drop(app_state);
 
     // Recreate handle - it's safe to reopen
@@ -334,11 +319,13 @@ fn scan_memory(
         _ => types::ScanType::Exact,
     };
 
-    let mut config = scanner::ScanConfig::default();
-    config.data_type = dt;
-    config.scan_type = st;
-    config.writable_only = writable_only;
-    config.aligned = aligned;
+    let config = scanner::ScanConfig {
+        data_type: dt,
+        scan_type: st,
+        writable_only,
+        aligned,
+        ..Default::default()
+    };
 
     let mut scanner = scanner::Scanner::new(mem, config);
 
@@ -354,7 +341,9 @@ fn scan_memory(
         None
     };
 
-    let results = scanner.scan(value_bytes.as_deref(), range).map_err(|e| e.to_string())?;
+    let results = scanner
+        .scan(value_bytes.as_deref(), range)
+        .map_err(|e| e.to_string())?;
 
     let frontend_results: Vec<ScanResult> = results
         .iter()
@@ -381,9 +370,7 @@ fn rescan_memory(
     range_max: Option<f64>,
 ) -> Result<Vec<ScanResult>, String> {
     let app_state = state.lock().unwrap();
-    let pid = app_state
-        .attached_pid
-        .ok_or("No process attached")?;
+    let pid = app_state.attached_pid.ok_or("No process attached")?;
     drop(app_state);
 
     // Recreate handle - it's safe to reopen
@@ -416,12 +403,14 @@ fn rescan_memory(
         _ => types::ScanType::Exact,
     };
 
-    let mut config = scanner::ScanConfig::default();
-    config.data_type = dt;
-    config.scan_type = st;
+    let config = scanner::ScanConfig {
+        data_type: dt,
+        scan_type: st,
+        ..Default::default()
+    };
 
     let mut scanner = scanner::Scanner::new(mem, config);
-    
+
     // Restore previous results
     let app_state = state.lock().unwrap();
     scanner.set_results(app_state.scan_results.clone());
@@ -439,7 +428,9 @@ fn rescan_memory(
         None
     };
 
-    let results = scanner.rescan(value_bytes.as_deref(), range).map_err(|e| e.to_string())?;
+    let results = scanner
+        .rescan(value_bytes.as_deref(), range)
+        .map_err(|e| e.to_string())?;
 
     let frontend_results: Vec<ScanResult> = results
         .iter()
@@ -458,8 +449,8 @@ fn rescan_memory(
 
 #[tauri::command]
 fn read_memory(pid: u32, address: String, size: usize) -> Result<Vec<u8>, String> {
-    let addr = if address.starts_with("0x") {
-        usize::from_str_radix(&address[2..], 16)
+    let addr = if let Some(hex) = address.strip_prefix("0x") {
+        usize::from_str_radix(hex, 16)
     } else {
         address.parse()
     }
@@ -473,18 +464,20 @@ fn read_memory(pid: u32, address: String, size: usize) -> Result<Vec<u8>, String
 }
 
 #[tauri::command]
-fn write_memory(state: tauri::State<SharedState>, address: String, data: Vec<u8>) -> Result<String, String> {
-    let addr = if address.starts_with("0x") {
-        usize::from_str_radix(&address[2..], 16)
+fn write_memory(
+    state: tauri::State<SharedState>,
+    address: String,
+    data: Vec<u8>,
+) -> Result<String, String> {
+    let addr = if let Some(hex) = address.strip_prefix("0x") {
+        usize::from_str_radix(hex, 16)
     } else {
         address.parse()
     }
     .map_err(|e| format!("Invalid address: {}", e))?;
 
     let app_state = state.lock().unwrap();
-    let pid = app_state
-        .attached_pid
-        .ok_or("No process attached")?;
+    let pid = app_state.attached_pid.ok_or("No process attached")?;
     drop(app_state);
 
     // Recreate handle
@@ -502,7 +495,7 @@ fn get_memory_regions(pid: u32) -> Result<Vec<types::MemoryRegion>, String> {
     let manager = process::get_process_manager();
     let handle = manager.attach(pid).map_err(|e| e.to_string())?;
     let mem = memory::create_memory(handle.as_ref()).map_err(|e| e.to_string())?;
-    
+
     mem.query_regions().map_err(|e| e.to_string())
 }
 

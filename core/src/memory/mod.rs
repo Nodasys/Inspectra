@@ -4,15 +4,15 @@ use crate::error::Result;
 use crate::process::ProcessHandle;
 use crate::types::{Address, MemoryRegion, Protection, Size};
 
-#[cfg(windows)]
-mod windows;
 #[cfg(unix)]
 mod unix;
-
 #[cfg(windows)]
-pub use self::windows::*;
+mod windows;
+
 #[cfg(unix)]
 pub use self::unix::*;
+#[cfg(windows)]
+pub use self::windows::*;
 
 /// Memory reader/writer trait
 pub trait Memory: Send + Sync {
@@ -56,7 +56,7 @@ mod tests {
     fn test_memory_regions() {
         let manager = process::get_process_manager();
         let current_pid = std::process::id();
-        
+
         if let Ok(handle) = manager.attach(current_pid) {
             if let Ok(memory) = create_memory(handle.as_ref()) {
                 let regions = memory.query_regions().unwrap();

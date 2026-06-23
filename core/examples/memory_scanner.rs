@@ -29,8 +29,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             eprintln!("No process found with name: {}", input);
             return Ok(());
         }
-        println!("Found {} processes, using first: {} (PID: {})", 
-            procs.len(), procs[0].name, procs[0].pid);
+        println!(
+            "Found {} processes, using first: {} (PID: {})",
+            procs.len(),
+            procs[0].name,
+            procs[0].pid
+        );
         manager.attach(procs[0].pid)?
     };
 
@@ -40,8 +44,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mem = memory::create_memory(handle.as_ref())?;
 
     // Configure scanner
-    let mut config = ScanConfig::default();
-    config.data_type = DataType::I32;
+    let config = ScanConfig {
+        data_type: DataType::I32,
+        ..Default::default()
+    };
 
     let mut scanner = Scanner::new(mem, config);
 
@@ -60,11 +66,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if let Ok(value) = value_input.parse::<i32>() {
             println!("Scanning for value: {}", value);
-            
-            let results = scanner.scan(&value.to_le_bytes())?;
-            
+
+            let bytes = value.to_le_bytes();
+            let results = scanner.scan(Some(&bytes), None)?;
+
             println!("Found {} results", results.len());
-            
+
             // Display first 10 results
             for (i, result) in results.iter().take(10).enumerate() {
                 println!("  [{}] Address: 0x{:X}", i, result.address);

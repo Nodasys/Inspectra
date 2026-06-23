@@ -5,13 +5,13 @@
 //! This crate provides the core functionality for process introspection,
 //! memory scanning, pointer analysis, and runtime manipulation.
 
+pub mod debugger;
 pub mod error;
 pub mod memory;
 pub mod platform;
+pub mod pointer;
 pub mod process;
 pub mod scanner;
-pub mod pointer;
-pub mod debugger;
 pub mod types;
 
 pub use error::{InspectraError, Result};

@@ -61,14 +61,10 @@ pub fn value_to_bytes(value: &str, data_type: DataType) -> Result<Vec<u8>, Strin
 /// Convert bytes to display string
 pub fn bytes_to_string(bytes: &[u8], data_type: DataType) -> String {
     match data_type {
-        DataType::I8 if bytes.len() >= 1 => i8::from_le_bytes([bytes[0]]).to_string(),
-        DataType::U8 if bytes.len() >= 1 => bytes[0].to_string(),
-        DataType::I16 if bytes.len() >= 2 => {
-            i16::from_le_bytes([bytes[0], bytes[1]]).to_string()
-        }
-        DataType::U16 if bytes.len() >= 2 => {
-            u16::from_le_bytes([bytes[0], bytes[1]]).to_string()
-        }
+        DataType::I8 if !bytes.is_empty() => i8::from_le_bytes([bytes[0]]).to_string(),
+        DataType::U8 if !bytes.is_empty() => bytes[0].to_string(),
+        DataType::I16 if bytes.len() >= 2 => i16::from_le_bytes([bytes[0], bytes[1]]).to_string(),
+        DataType::U16 if bytes.len() >= 2 => u16::from_le_bytes([bytes[0], bytes[1]]).to_string(),
         DataType::I32 if bytes.len() >= 4 => {
             i32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]).to_string()
         }
