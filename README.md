@@ -98,6 +98,7 @@ if chrome:
 - **[API Documentation](docs/API.md)**: Complete API reference
 - **[Architecture](docs/ARCHITECTURE.md)**: System design and architecture
 - **[Development Guide](docs/DEVELOPMENT.md)**: Contributing and development workflow
+- **[Release Process](docs/RELEASE.md)**: Versioning, installers, and GitHub Releases
 - **[Roadmap](docs/ROADMAP.md)**: Future plans and features
 
 ## 🏗️ Project Structure
@@ -143,6 +144,14 @@ cd bindings/python
 pip install maturin
 maturin develop
 ```
+
+### Desktop Releases
+
+Inspectra desktop releases are built automatically by GitHub Actions when a
+`vX.Y.Z` tag is pushed. The release workflow builds the Tauri app for Windows,
+Linux and macOS and uploads the generated bundles to GitHub Releases.
+
+See [docs/RELEASE.md](docs/RELEASE.md) for the full release procedure.
 
 ## 🧪 Examples
 
@@ -251,4 +260,3 @@ If you find Inspectra useful, please consider:
 For private security reports and sensitive issues: kevin.gregoire@nodasys.com
 
 For general issues, use GitHub Issues once the repository is public.
-
