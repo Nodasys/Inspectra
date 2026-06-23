@@ -252,7 +252,7 @@ unsafe fn icon_to_png_base64_draw(
 }
 
 #[cfg(not(windows))]
-fn extract_process_icon(_path: &str, _pid: u32) -> Option<String> {
+fn extract_process_icon_robust(_path: &str, _pid: u32) -> Option<String> {
     None
 }
 
