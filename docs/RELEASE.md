@@ -8,6 +8,9 @@ then uploads the generated bundles to the matching GitHub Release.
 ## Release artifacts
 
 The workflow is triggered by tags named `vX.Y.Z`, for example `v0.2.0`.
+The Linux build intentionally uses a pinned Rust toolchain while Inspectra is on
+the Tauri v1 stack, because its WebKitGTK dependency chain is sensitive to newer
+Rust releases.
 
 Expected artifacts:
 
@@ -31,6 +34,7 @@ node scripts/prepare-release.mjs 0.2.0
 The script synchronizes the version in:
 
 - `Cargo.toml`
+- `Cargo.lock`
 - `inspectra-gui/src-tauri/Cargo.toml`
 - `inspectra-gui/src-tauri/tauri.conf.json`
 - `inspectra-gui/package.json`

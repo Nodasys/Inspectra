@@ -38,6 +38,11 @@ function writeProjectFile(path, contents) {
 }
 
 function record(path, changed) {
+  const existing = changes.find((entry) => entry.path === path);
+  if (existing) {
+    existing.changed = existing.changed || changed;
+    return;
+  }
   changes.push({ path, changed });
 }
 
@@ -88,6 +93,17 @@ replaceOnce(
   "Python package version",
 );
 
+for (const packageName of ["inspectra-core", "inspectra-gui", "inspectra-python"]) {
+  replaceOnce(
+    "Cargo.lock",
+    new RegExp(
+      `(\\[\\[package\\]\\]\\r?\\nname = "${packageName}"\\r?\\nversion = ")[^"]+(")`,
+    ),
+    `$1${version}$2`,
+    `${packageName} lockfile version`,
+  );
+}
+
 updateJson("inspectra-gui/src-tauri/tauri.conf.json", (data) => {
   data.package.version = version;
 });
@@ -123,7 +139,7 @@ if (unchanged.length > 0) {
 }
 
 console.log("\nNext release commands:");
-console.log("git add Cargo.toml inspectra-gui bindings/python/pyproject.toml");
+console.log("git add Cargo.toml Cargo.lock inspectra-gui bindings/python/pyproject.toml");
 console.log(`git commit -m "Release ${tag}"`);
 console.log(`git tag ${tag}`);
 console.log(`git push origin main ${tag}`);

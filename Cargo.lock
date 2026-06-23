@@ -1556,7 +1556,7 @@ dependencies = [
 
 [[package]]
 name = "inspectra-core"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "env_logger",
@@ -1573,7 +1573,7 @@ dependencies = [
 
 [[package]]
 name = "inspectra-gui"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "base64 0.21.7",
  "image",
@@ -1588,7 +1588,7 @@ dependencies = [
 
 [[package]]
 name = "inspectra-python"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "inspectra-core",
  "pyo3",
